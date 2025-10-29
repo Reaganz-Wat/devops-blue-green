@@ -11,7 +11,7 @@ This project implements a Blue/Green deployment strategy for a Node.js applicati
 
 1. **Clone the repository**
 ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/Reaganz-Wat/devops-blue-green.git
    cd devops-blue-green
 ```
 

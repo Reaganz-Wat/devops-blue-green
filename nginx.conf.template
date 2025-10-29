@@ -3,34 +3,25 @@ events {
 }
 
 http {
-    # Logging
     access_log /var/log/nginx/access.log;
     error_log /var/log/nginx/error.log;
 
-    # Upstream definitions
-    upstream blue_backend {
-        server app_blue:3000 max_fails=2 fail_timeout=5s;
-    }
-
-    upstream green_backend {
-        server app_green:3000 max_fails=2 fail_timeout=5s;
-    }
-
-    # Primary upstream with failover logic
+    # Primary server is determined by ACTIVE_POOL
+    # Backup is the opposite pool
     upstream app_backend {
-        server app_blue:3000 max_fails=2 fail_timeout=5s;
-        server app_green:3000 backup;
+        # If ACTIVE_POOL=blue, blue is primary and green is backup
+        # If ACTIVE_POOL=green, green is primary and blue is backup
+        server app_blue:3000 max_fails=2 fail_timeout=5s ${BLUE_BACKUP};
+        server app_green:3000 max_fails=2 fail_timeout=5s ${GREEN_BACKUP};
     }
 
     server {
         listen 80;
         
-        # Proxy timeouts - tight for fast failover
         proxy_connect_timeout 2s;
         proxy_send_timeout 3s;
         proxy_read_timeout 3s;
         
-        # Retry on errors
         proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
         proxy_next_upstream_tries 2;
         proxy_next_upstream_timeout 10s;
@@ -40,9 +31,6 @@ http {
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            
-            # Don't hide upstream headers
-            proxy_pass_request_headers on;
         }
     }
 }
