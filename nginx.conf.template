@@ -1,36 +1,40 @@
-events {
-    worker_connections 1024;
+# Custom log format with pool, release, upstream details
+log_format detailed '$remote_addr - $remote_user [$time_local] '
+                   '"$request" $status $body_bytes_sent '
+                   '"$http_referer" "$http_user_agent" '
+                   'pool=$upstream_http_x_app_pool '
+                   'release=$upstream_http_x_release_id '
+                   'upstream_status=$upstream_status '
+                   'upstream_addr=$upstream_addr '
+                   'request_time=$request_time '
+                   'upstream_response_time=$upstream_response_time';
+
+access_log /var/log/nginx/access.log detailed;
+
+# Primary server is determined by ACTIVE_POOL
+# Backup is the opposite pool
+upstream app_backend {
+    # If ACTIVE_POOL=blue, blue is primary and green is backup
+    # If ACTIVE_POOL=green, green is primary and blue is backup
+    server app_blue:3000 max_fails=2 fail_timeout=5s ${BLUE_BACKUP};
+    server app_green:3000 max_fails=2 fail_timeout=5s ${GREEN_BACKUP};
 }
 
-http {
-    access_log /var/log/nginx/access.log;
-    error_log /var/log/nginx/error.log;
+server {
+    listen 80;
+    
+    proxy_connect_timeout 2s;
+    proxy_send_timeout 3s;
+    proxy_read_timeout 3s;
+    
+    proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
+    proxy_next_upstream_tries 2;
+    proxy_next_upstream_timeout 10s;
 
-    # Primary server is determined by ACTIVE_POOL
-    # Backup is the opposite pool
-    upstream app_backend {
-        # If ACTIVE_POOL=blue, blue is primary and green is backup
-        # If ACTIVE_POOL=green, green is primary and blue is backup
-        server app_blue:3000 max_fails=2 fail_timeout=5s ${BLUE_BACKUP};
-        server app_green:3000 max_fails=2 fail_timeout=5s ${GREEN_BACKUP};
-    }
-
-    server {
-        listen 80;
-        
-        proxy_connect_timeout 2s;
-        proxy_send_timeout 3s;
-        proxy_read_timeout 3s;
-        
-        proxy_next_upstream error timeout http_500 http_502 http_503 http_504;
-        proxy_next_upstream_tries 2;
-        proxy_next_upstream_timeout 10s;
-
-        location / {
-            proxy_pass http://app_backend;
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        }
+    location / {
+        proxy_pass http://app_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
 }

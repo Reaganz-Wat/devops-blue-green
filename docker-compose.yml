@@ -8,6 +8,7 @@ services:
       - "8080:80"
     volumes:
       - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - nginx_logs:/var/log/nginx
     environment:
       - BLUE_BACKUP=${BLUE_BACKUP:-}
       - GREEN_BACKUP=${GREEN_BACKUP:-backup}
@@ -50,6 +51,28 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
+
+  alert_watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.watcher
+    container_name: alert_watcher
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - ERROR_RATE_THRESHOLD=${ERROR_RATE_THRESHOLD:-2}
+      - WINDOW_SIZE=${WINDOW_SIZE:-200}
+      - ALERT_COOLDOWN_SEC=${ALERT_COOLDOWN_SEC:-300}
+      - MAINTENANCE_MODE=${MAINTENANCE_MODE:-false}
+    depends_on:
+      - nginx
+    networks:
+      - app_network
+    restart: unless-stopped
+
+volumes:
+  nginx_logs:
 
 networks:
   app_network:
