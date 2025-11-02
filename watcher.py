@@ -11,9 +11,8 @@ import sys
 import time
 import re
 import json
-import subprocess
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 
 
@@ -25,6 +24,9 @@ class LogWatcher:
         self.window_size = int(os.getenv('WINDOW_SIZE', '200'))
         self.cooldown_sec = int(os.getenv('ALERT_COOLDOWN_SEC', '300'))
         self.maintenance_mode = os.getenv('MAINTENANCE_MODE', 'false').lower() == 'true'
+        
+        # Log file path (from shared volume)
+        self.log_file_path = '/var/log/nginx/access.log'
         
         # State tracking
         self.last_pool = None
@@ -43,7 +45,7 @@ class LogWatcher:
         print(f"   Window Size: {self.window_size} requests")
         print(f"   Cooldown: {self.cooldown_sec}s")
         print(f"   Maintenance Mode: {self.maintenance_mode}")
-        print(f"   Watching: Docker logs from nginx_proxy")
+        print(f"   Watching: {self.log_file_path}")
         print("-" * 60)
 
     def parse_log_line(self, line):
@@ -58,7 +60,6 @@ class LogWatcher:
             pool = pool_match.group(1) if pool_match else None
             
             # Extract upstream status (e.g., upstream_status=200 or 500)
-            # Handle multiple statuses like "500, 200"
             status_match = re.search(r'upstream_status=([\d,\s]+)', line)
             if status_match:
                 statuses = status_match.group(1).split(',')
@@ -80,7 +81,8 @@ class LogWatcher:
                 'upstream_status': upstream_status,
                 'upstream_addr': upstream_addr,
                 'request_time': request_time,
-                'timestamp': datetime.now()
+                'timestamp': datetime.now(),
+                'raw_line': line
             }
         except Exception as e:
             # Don't print errors for every line, just return None
@@ -209,58 +211,56 @@ class LogWatcher:
                     self.send_slack_alert(message, color="good", alert_type="recovery")
                     self.last_recovery_alert = now
 
-    def tail_docker_logs(self):
-        """Tail Docker logs from nginx_proxy container."""
-        print(f"⏳ Connecting to nginx_proxy container logs...")
+    def tail_log_file(self):
+        """Tail the Nginx access log file directly - handles FIFO/named pipes."""
+        print(f"⏳ Waiting for log file: {self.log_file_path}")
         
+        # Wait for log file to exist
+        while not os.path.exists(self.log_file_path):
+            print(f"📁 Log file not found, waiting...")
+            time.sleep(2)
+        
+        print(f"✅ Found log file, starting to monitor...")
+        print(f"📊 Monitoring started. Waiting for traffic...\n")
+        
+        # Open the file in read mode - for FIFO/named pipes, we can't seek
         try:
-            # Use docker logs -f to follow the nginx container logs
-            process = subprocess.Popen(
-                ['docker', 'logs', '-f', '--tail', '0', 'nginx_proxy'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Nginx logs go to stderr
-                universal_newlines=True,
-                bufsize=1
-            )
-            
-            print(f"✅ Connected to nginx_proxy logs")
-            print(f"📊 Monitoring started. Waiting for traffic...\n")
-            
-            for line in iter(process.stdout.readline, ''):
-                if not line:
-                    continue
-                
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Parse log line
-                parsed = self.parse_log_line(line)
-                if not parsed or not parsed['pool']:
-                    continue
-                
-                # Add to window
-                self.request_window.append(parsed)
-                
-                # Check for failover
-                self.check_failover(parsed['pool'])
-                
-                # Check error rate
-                self.check_error_rate()
-                
-        except KeyboardInterrupt:
-            process.terminate()
+            with open(self.log_file_path, 'r') as file:
+                while True:
+                    line = file.readline()
+                    if not line:
+                        time.sleep(0.1)  # Wait for new content
+                        continue
+                    
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Parse log line
+                    parsed = self.parse_log_line(line)
+                    if not parsed or not parsed['pool']:
+                        continue
+                    
+                    # Add to window
+                    self.request_window.append(parsed)
+                    
+                    # Check for failover
+                    self.check_failover(parsed['pool'])
+                    
+                    # Check error rate
+                    self.check_error_rate()
+                    
+        except IOError as e:
+            print(f"❌ I/O error reading log file: {e}")
             raise
         except Exception as e:
-            print(f"❌ Error in tail process: {e}")
-            if 'process' in locals():
-                process.terminate()
+            print(f"❌ Unexpected error reading log file: {e}")
             raise
 
     def run(self):
         """Main run loop."""
         try:
-            self.tail_docker_logs()
+            self.tail_log_file()
         except KeyboardInterrupt:
             print("\n⚠️  Watcher stopped by user")
             sys.exit(0)
