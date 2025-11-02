@@ -36,7 +36,7 @@ class LogWatcher:
         self.last_recovery_alert = None
         
         # Validate configuration
-        if not self.slack_webhook or 'https://hooks.slack.com/services/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' in self.slack_webhook:
+        if not self.slack_webhook or 'YOUR/WEBHOOK/URL' in self.slack_webhook:
             print("⚠️  WARNING: SLACK_WEBHOOK_URL not configured. Alerts will be printed to console only.")
             self.slack_webhook = None
         
