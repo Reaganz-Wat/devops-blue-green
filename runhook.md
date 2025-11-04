@@ -99,10 +99,8 @@ Errors: 21 / 400 requests
 ```
 
 5. **If both pools are affected:**
-   - Check database connectivity
    - Verify external service dependencies
    - Review recent deployments or configuration changes
-   - Scale resources if needed
 
 6. **Monitor recovery:**
    - Watch for "Service Recovery" alert
@@ -118,64 +116,6 @@ Service Recovery
 Error rate has improved: 0.5%
 System is stabilizing
 ```
-
-**What it means:**
-- The error rate has dropped below half the threshold
-- The system is recovering from a previous incident
-- Normal operations are resuming
-
-**Operator Actions:**
-
-1. **Verify stability:**
-```bash
-   # Run several test requests
-   for i in {1..20}; do
-     curl -s http://localhost:8080/version | grep "X-App-Pool"
-   done
-```
-
-2. **Review incident timeline:**
-   - Document what caused the issue
-   - Note what resolved it
-   - Update runbook if needed
-
-3. **Post-mortem (if major incident):**
-   - Analyze logs for root cause
-   - Identify preventive measures
-   - Update monitoring thresholds if needed
-
----
-
-## Maintenance Mode
-
-### Suppress Alerts During Planned Changes
-
-When performing planned maintenance (deployments, testing, infrastructure changes):
-
-1. **Enable maintenance mode:**
-```bash
-   # Edit .env
-   MAINTENANCE_MODE=true
-   
-   # Restart watcher
-   docker-compose restart alert_watcher
-```
-
-2. **Perform your maintenance:**
-   - Deploy new versions
-   - Test failover scenarios
-   - Update configurations
-
-3. **Disable maintenance mode:**
-```bash
-   # Edit .env
-   MAINTENANCE_MODE=false
-   
-   # Restart watcher
-   docker-compose restart alert_watcher
-```
-
----
 
 ## Manual Testing & Verification
 
@@ -309,33 +249,3 @@ If both pools fail:
    docker-compose down
    docker-compose up -d
 ```
-
-### Database/External Dependency Failure
-
-1. **Verify connectivity:**
-```bash
-   docker exec app_blue ping database-host
-```
-
-2. **Check network:**
-```bash
-   docker network inspect devops-blue-green_app_network
-```
-
-3. **Review service dependencies in docker-compose.yml**
-
----
-
-## Contact & Escalation
-
-- **DevOps Team:** devops@company.com
-- **On-Call Engineer:** Check PagerDuty
-- **Slack Channel:** #alerts-production
-
----
-
-## Changelog
-
-| Date | Change | Author |
-|------|--------|--------|
-| 2025-11-01 | Initial runbook | DevOps Team |
